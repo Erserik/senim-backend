@@ -31,8 +31,8 @@ async def send_sms(req: SendSmsRequest):
     store_sms_code(req.phone, code)
 
     # TODO: integrate real SMS provider (e.g. smsc.kz, mobizon)
-    # In dev mode, return the code for testing
-    return SendSmsResponse(message="SMS sent", code=code)
+    # Code is stored server-side only — never expose it in the response
+    return SendSmsResponse(message="SMS sent")
 
 
 @router.post("/verify-sms", response_model=VerifySmsResponse)

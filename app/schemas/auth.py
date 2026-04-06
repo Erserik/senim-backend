@@ -7,8 +7,6 @@ class SendSmsRequest(BaseModel):
 
 class SendSmsResponse(BaseModel):
     message: str = "SMS sent"
-    # In dev mode, include the code for testing
-    code: str | None = None
 
 
 class VerifySmsRequest(BaseModel):
