@@ -1,8 +1,7 @@
-from datetime import timezone
-
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.security import get_current_user
@@ -10,6 +9,7 @@ from app.models.master_profile import MasterProfile
 from app.models.review import Review
 from app.models.user import User
 from app.schemas.profile import (
+    ClientProfileResponse,
     MasterProfileResponse,
     PriceItem,
     RecentReviewsResponse,
@@ -21,66 +21,64 @@ from app.schemas.profile import (
 router = APIRouter(prefix="/profile", tags=["profile"])
 
 
-def _build_profile_response(user: User, profile: MasterProfile, reviews: list | None = None) -> MasterProfileResponse:
-    # Build prices list
-    prices_list = []
-    if profile.prices:
-        for cat_slug, price_range in profile.prices.items():
-            from_p = price_range.get("from", 0)
-            to_p = price_range.get("to", 0)
-            if from_p and to_p:
-                range_str = f"{from_p:,} – {to_p:,} тг".replace(",", " ")
-            elif from_p:
-                range_str = f"от {from_p:,} тг".replace(",", " ")
-            else:
-                range_str = "Договорная"
-            prices_list.append(PriceItem(category=cat_slug, range=range_str))
+def _member_since(user: User) -> str | None:
+    if not user.created_at:
+        return None
+    months_ru = {
+        1: "января", 2: "февраля", 3: "марта", 4: "апреля",
+        5: "мая", 6: "июня", 7: "июля", 8: "августа",
+        9: "сентября", 10: "октября", 11: "ноября", 12: "декабря",
+    }
+    dt = user.created_at
+    return f"С {months_ru.get(dt.month, '')} {dt.year}"
 
-    # Experience display
-    exp_map = {"beginner": "< 1 года", "mid": "1-3 года", "expert": "> 3 лет"}
-    exp_display = exp_map.get(profile.experience or "", profile.experience)
 
-    # Member since
-    member_since = None
-    if user.created_at:
-        months_ru = {
-            1: "января", 2: "февраля", 3: "марта", 4: "апреля",
-            5: "мая", 6: "июня", 7: "июля", 8: "августа",
-            9: "сентября", 10: "октября", 11: "ноября", 12: "декабря",
-        }
-        dt = user.created_at
-        member_since = f"На платформе с {months_ru.get(dt.month, '')} {dt.year}"
+def _review_item(review: Review) -> ReviewItem:
+    reviewer = review.reviewer
+    return ReviewItem(
+        id=review.id,
+        reviewer_name=reviewer.full_name if reviewer else "Аноним",
+        reviewer_initials=reviewer.initials if reviewer else "??",
+        reviewer_photo=reviewer.photo_url if reviewer else None,
+        rating=review.rating,
+        text=review.text,
+        tip_amount=review.tip_amount,
+        direction=review.direction,
+        created_at=review.created_at,
+    )
 
-    # Reviews
-    review_items = []
-    if reviews:
-        for r in reviews:
-            client = r.client
-            review_items.append(
-                ReviewItem(
-                    name=client.full_name if client else "Аноним",
-                    rating=r.rating,
-                    text=r.text,
-                    time=r.created_at.strftime("%d.%m.%Y") if r.created_at else "",
-                )
-            )
 
+def _master_profile_response(user: User, mp: MasterProfile, reviews: list[Review]) -> MasterProfileResponse:
+    prices = []
+    for cat_slug, rng in (mp.prices or {}).items():
+        prices.append(PriceItem(
+            category_slug=cat_slug,
+            price_from=rng.get("from"),
+            price_to=rng.get("to"),
+        ))
     return MasterProfileResponse(
         user_id=user.id,
-        name=user.full_name,
+        name=user.full_name or "Мастер",
         initials=user.initials,
-        rating=profile.rating or 0.0,
-        reviews=profile.review_count or 0,
-        orders=profile.order_count or 0,
-        experience=exp_display,
-        response_time=profile.response_time_minutes or 0,
-        about=profile.bio,
-        specializations=profile.specializations or [],
-        portfolio=profile.portfolio or [],
-        prices=prices_list,
-        districts=profile.districts or [],
-        recent_reviews=review_items,
-        member_since=member_since,
+        photo_url=user.photo_url,
+        city_slug=user.city_slug,
+        member_since=_member_since(user),
+        bio=mp.bio,
+        experience=mp.experience,
+        tier=mp.tier,
+        commission_percent=mp.commission_percent,
+        rating=mp.rating or 0.0,
+        review_count=mp.review_count or 0,
+        order_count=mp.order_count or 0,
+        response_time_minutes=mp.response_time_minutes or 0,
+        specializations=mp.specializations or [],
+        service_lat=mp.service_lat,
+        service_lng=mp.service_lng,
+        service_radius_km=mp.service_radius_km,
+        portfolio=mp.portfolio or [],
+        prices=prices,
+        recent_reviews=[_review_item(r) for r in reviews],
+        iin_verified=mp.iin_verified,
     )
 
 
@@ -89,100 +87,111 @@ async def get_my_profile(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get current master's profile."""
     if user.role != "master" or not user.master_profile:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Not a master")
-
-    # Get recent reviews
-    reviews_result = await db.execute(
+    reviews = (await db.execute(
         select(Review)
-        .where(Review.master_id == user.id)
+        .options(selectinload(Review.reviewer))
+        .where(Review.target_id == user.id, Review.direction == "client_to_master")
         .order_by(Review.created_at.desc())
         .limit(10)
-    )
-    reviews = reviews_result.scalars().all()
-
-    return _build_profile_response(user, user.master_profile, reviews)
+    )).scalars().all()
+    return _master_profile_response(user, user.master_profile, list(reviews))
 
 
-@router.get("/{user_id}", response_model=MasterProfileResponse)
+@router.get("/master/{user_id}", response_model=MasterProfileResponse)
 async def get_master_profile(
     user_id: int,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    """Get any master's public profile."""
-    result = await db.execute(select(User).where(User.id == user_id))
-    target_user = result.scalar_one_or_none()
-    if not target_user or target_user.role != "master" or not target_user.master_profile:
+    u = (await db.execute(
+        select(User).options(selectinload(User.master_profile)).where(User.id == user_id)
+    )).scalar_one_or_none()
+    if not u or u.role != "master" or not u.master_profile:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Master not found")
-
-    reviews_result = await db.execute(
+    reviews = (await db.execute(
         select(Review)
-        .where(Review.master_id == user_id)
+        .options(selectinload(Review.reviewer))
+        .where(Review.target_id == user_id, Review.direction == "client_to_master")
         .order_by(Review.created_at.desc())
         .limit(10)
+    )).scalars().all()
+    return _master_profile_response(u, u.master_profile, list(reviews))
+
+
+@router.get("/client/{user_id}", response_model=ClientProfileResponse)
+async def get_client_profile(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    u = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not u:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    reviews = (await db.execute(
+        select(Review)
+        .options(selectinload(Review.reviewer))
+        .where(Review.target_id == user_id, Review.direction == "master_to_client")
+        .order_by(Review.created_at.desc())
+        .limit(10)
+    )).scalars().all()
+    return ClientProfileResponse(
+        user_id=u.id,
+        name=u.full_name or "Клиент",
+        initials=u.initials,
+        photo_url=u.photo_url,
+        city_slug=u.city_slug,
+        member_since=_member_since(u),
+        client_rating=u.client_rating or 0.0,
+        client_review_count=u.client_review_count or 0,
+        client_order_count=u.client_order_count or 0,
+        recent_reviews=[_review_item(r) for r in reviews],
     )
-    reviews = reviews_result.scalars().all()
-
-    return _build_profile_response(target_user, target_user.master_profile, reviews)
 
 
-@router.get("/top/masters", response_model=TopMastersResponse)
+@router.get("/top-masters", response_model=TopMastersResponse)
 async def get_top_masters(
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    """Get top-rated masters for the client home page."""
     result = await db.execute(
         select(MasterProfile)
-        .options()
         .where(MasterProfile.onboarding_complete == True)  # noqa: E712
         .order_by(MasterProfile.rating.desc())
         .limit(10)
     )
-    profiles = result.scalars().all()
+    profiles = list(result.scalars().all())
 
-    masters = []
+    masters: list[TopMasterItem] = []
     for p in profiles:
-        user_result = await db.execute(select(User).where(User.id == p.user_id))
-        u = user_result.scalar_one_or_none()
-        if u:
-            masters.append(
-                TopMasterItem(
-                    user_id=u.id,
-                    name=u.full_name,
-                    initials=u.initials,
-                    rating=p.rating or 0.0,
-                    reviews=p.review_count or 0,
-                )
-            )
-
+        u = (await db.execute(select(User).where(User.id == p.user_id))).scalar_one_or_none()
+        if not u:
+            continue
+        masters.append(TopMasterItem(
+            user_id=u.id,
+            name=u.full_name or "Мастер",
+            initials=u.initials,
+            photo_url=u.photo_url,
+            tier=p.tier,
+            rating=p.rating or 0.0,
+            review_count=p.review_count or 0,
+            specializations=p.specializations or [],
+        ))
     return TopMastersResponse(masters=masters)
 
 
-@router.get("/reviews/recent", response_model=RecentReviewsResponse)
+@router.get("/recent-reviews", response_model=RecentReviewsResponse)
 async def get_recent_reviews(
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    """Get recent reviews across the platform."""
     result = await db.execute(
-        select(Review).order_by(Review.created_at.desc()).limit(10)
+        select(Review)
+        .options(selectinload(Review.reviewer))
+        .where(Review.direction == "client_to_master")
+        .order_by(Review.created_at.desc())
+        .limit(10)
     )
     reviews = result.scalars().all()
-
-    items = []
-    for r in reviews:
-        client_result = await db.execute(select(User).where(User.id == r.client_id))
-        client = client_result.scalar_one_or_none()
-        items.append(
-            ReviewItem(
-                name=client.full_name if client else "Аноним",
-                rating=r.rating,
-                text=r.text,
-                time=r.created_at.strftime("%d.%m.%Y") if r.created_at else "",
-            )
-        )
-
-    return RecentReviewsResponse(reviews=items)
+    return RecentReviewsResponse(reviews=[_review_item(r) for r in reviews])

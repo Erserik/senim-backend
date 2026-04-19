@@ -24,6 +24,10 @@ def store_sms_code(phone: str, code: str) -> None:
     _sms_codes[phone] = code
 
 
+def peek_sms_code(phone: str) -> str | None:
+    return _sms_codes.get(phone)
+
+
 def verify_sms_code(phone: str, code: str) -> bool:
     stored = _sms_codes.get(phone)
     if stored and stored == code:
