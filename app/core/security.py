@@ -1,4 +1,3 @@
-import random
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, HTTPException, status
@@ -11,29 +10,6 @@ from app.core.config import settings
 from app.core.database import get_db
 
 security_scheme = HTTPBearer()
-
-# In-memory SMS code store (production: use Redis)
-_sms_codes: dict[str, str] = {}
-
-
-def generate_sms_code() -> str:
-    return f"{random.randint(1000, 9999)}"
-
-
-def store_sms_code(phone: str, code: str) -> None:
-    _sms_codes[phone] = code
-
-
-def peek_sms_code(phone: str) -> str | None:
-    return _sms_codes.get(phone)
-
-
-def verify_sms_code(phone: str, code: str) -> bool:
-    stored = _sms_codes.get(phone)
-    if stored and stored == code:
-        _sms_codes.pop(phone, None)
-        return True
-    return False
 
 
 def create_access_token(user_id: int) -> str:

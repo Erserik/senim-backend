@@ -8,11 +8,7 @@ from app.core.database import get_db
 from app.core.phone import normalize_phone
 from app.core.security import (
     create_access_token,
-    generate_sms_code,
     get_current_user,
-    peek_sms_code,
-    store_sms_code,
-    verify_sms_code,
 )
 from app.models.master_profile import MasterProfile
 from app.models.user import User
@@ -23,11 +19,7 @@ from app.schemas.auth import (
     MasterProfilePublic,
     ProfileSetupRequest,
     RoleSetupRequest,
-    SendSmsRequest,
-    SendSmsResponse,
     UserResponse,
-    VerifySmsRequest,
-    VerifySmsResponse,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -75,8 +67,7 @@ def user_to_response(user: User) -> UserResponse:
 
 @router.post("/login", response_model=AuthTokenResponse)
 async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
-    """Вход/регистрация по номеру телефона. Подтверждение владения номером
-    не выполняется до подключения реального SMS-провайдера."""
+    """Вход/регистрация по номеру телефона."""
     phone = normalize_phone(req.phone)
     if phone is None:
         raise HTTPException(
@@ -92,42 +83,6 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
         await db.flush()
     token = create_access_token(user.id)
     return AuthTokenResponse(access_token=token, is_new_user=is_new)
-
-
-@router.post("/send-sms", response_model=SendSmsResponse)
-async def send_sms(req: SendSmsRequest):
-    """Send SMS verification code. In dev, the code is returned to display in the UI."""
-    code = generate_sms_code()
-    store_sms_code(req.phone, code)
-    # Dev mode: expose code so the UI can display it.
-    return SendSmsResponse(message="SMS sent (dev mode)", dev_code=code)
-
-
-@router.post("/verify-sms", response_model=VerifySmsResponse)
-async def verify_sms(req: VerifySmsRequest, db: AsyncSession = Depends(get_db)):
-    if not verify_sms_code(req.phone, req.code):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Неверный или просроченный код",
-        )
-
-    result = await db.execute(select(User).where(User.phone == req.phone))
-    user = result.scalar_one_or_none()
-    is_new = user is None
-
-    if is_new:
-        user = User(phone=req.phone)
-        db.add(user)
-        await db.flush()
-
-    token = create_access_token(user.id)
-    return VerifySmsResponse(access_token=token, is_new_user=is_new)
-
-
-@router.get("/sms-code/{phone}")
-async def peek_code(phone: str):
-    """Dev helper: peek at current SMS code without consuming it."""
-    return {"phone": phone, "code": peek_sms_code(phone)}
 
 
 @router.post("/profile", response_model=UserResponse)

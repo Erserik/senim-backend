@@ -2,26 +2,6 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
-class SendSmsRequest(BaseModel):
-    phone: str = Field(..., min_length=10, max_length=20, examples=["+77771234567"])
-
-
-class SendSmsResponse(BaseModel):
-    message: str = "SMS sent"
-    dev_code: str | None = None  # shown in dev — displayed in UI
-
-
-class VerifySmsRequest(BaseModel):
-    phone: str = Field(..., min_length=10, max_length=20)
-    code: str = Field(..., min_length=4, max_length=4)
-
-
-class VerifySmsResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-    is_new_user: bool
-
-
 class ChangePhoneRequest(BaseModel):
     phone: str = Field(..., min_length=5, max_length=25)
 
