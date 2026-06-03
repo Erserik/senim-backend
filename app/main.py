@@ -27,7 +27,9 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 
 
 async def _dev_migrations() -> None:
-    """Idempotent ALTER TABLEs for SQLite (dev only)."""
+    """Idempotent ALTER TABLEs for SQLite (dev only). Skipped on PostgreSQL."""
+    if engine.dialect.name != 'sqlite':
+        return
     async with engine.begin() as conn:
         existing = await conn.execute(text("PRAGMA table_info(master_profiles)"))
         cols = {row[1] for row in existing.fetchall()}
