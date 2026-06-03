@@ -67,7 +67,7 @@ def user_to_response(user: User) -> UserResponse:
 
 @router.post("/login", response_model=AuthTokenResponse)
 async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
-    """Вход/регистрация по номеру телефона."""
+    """Вход/регистрация по номеру телефона. Подтверждение владения номером не выполняется."""
     phone = normalize_phone(req.phone)
     if phone is None:
         raise HTTPException(
