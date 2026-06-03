@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.phone import normalize_phone
 from app.core.security import (
     create_access_token,
     generate_sms_code,
@@ -15,7 +16,6 @@ from app.core.security import (
 )
 from app.models.master_profile import MasterProfile
 from app.models.user import User
-from app.core.phone import normalize_phone
 from app.schemas.auth import (
     AuthTokenResponse,
     ChangePhoneRequest,

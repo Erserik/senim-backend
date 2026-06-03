@@ -10,6 +10,8 @@ def test_normalize_phone_variants():
     assert normalize_phone("12345") is None
     assert normalize_phone("") is None
     assert normalize_phone("+15551234567") is None
+    assert normalize_phone("3105551234") is None
+    assert normalize_phone(None) is None
 
 
 async def test_login_creates_new_user(client):
