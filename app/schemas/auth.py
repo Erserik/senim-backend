@@ -53,6 +53,16 @@ class MasterProfilePublic(BaseModel):
     balance: int = 0
 
 
+class LoginRequest(BaseModel):
+    phone: str = Field(..., min_length=5, max_length=25, examples=["+77001234567"])
+
+
+class AuthTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    is_new_user: bool
+
+
 class UserResponse(BaseModel):
     id: int
     phone: str

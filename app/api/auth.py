@@ -15,8 +15,11 @@ from app.core.security import (
 )
 from app.models.master_profile import MasterProfile
 from app.models.user import User
+from app.core.phone import normalize_phone
 from app.schemas.auth import (
+    AuthTokenResponse,
     ChangePhoneRequest,
+    LoginRequest,
     MasterProfilePublic,
     ProfileSetupRequest,
     RoleSetupRequest,
@@ -68,6 +71,27 @@ def user_to_response(user: User) -> UserResponse:
         is_admin=user.is_admin,
         created_at=user.created_at,
     )
+
+
+@router.post("/login", response_model=AuthTokenResponse)
+async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
+    """Вход/регистрация по номеру телефона. Подтверждение владения номером
+    не выполняется до подключения реального SMS-провайдера."""
+    phone = normalize_phone(req.phone)
+    if phone is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Неверный формат номера",
+        )
+    result = await db.execute(select(User).where(User.phone == phone))
+    user = result.scalar_one_or_none()
+    is_new = user is None
+    if is_new:
+        user = User(phone=phone)
+        db.add(user)
+        await db.flush()
+    token = create_access_token(user.id)
+    return AuthTokenResponse(access_token=token, is_new_user=is_new)
 
 
 @router.post("/send-sms", response_model=SendSmsResponse)
