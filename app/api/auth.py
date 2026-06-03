@@ -165,19 +165,20 @@ async def change_phone(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    if not verify_sms_code(req.phone, req.code):
+    phone = normalize_phone(req.phone)
+    if phone is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Неверный или просроченный код",
+            detail="Неверный формат номера",
         )
-    existing = await db.execute(select(User).where(User.phone == req.phone))
+    existing = await db.execute(select(User).where(User.phone == phone))
     owner = existing.scalar_one_or_none()
     if owner is not None and owner.id != user.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Этот номер уже используется",
         )
-    user.phone = req.phone
+    user.phone = phone
     await db.flush()
     return user_to_response(user)
 

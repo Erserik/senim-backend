@@ -23,8 +23,7 @@ class VerifySmsResponse(BaseModel):
 
 
 class ChangePhoneRequest(BaseModel):
-    phone: str = Field(..., min_length=10, max_length=20)
-    code: str = Field(..., min_length=4, max_length=4)
+    phone: str = Field(..., min_length=5, max_length=25)
 
 
 class ProfileSetupRequest(BaseModel):
