@@ -27,6 +27,19 @@ class CategoryListResponse(BaseModel):
     categories: list[CategoryOut]
 
 
+class CategoryGroupOut(BaseModel):
+    slug: str
+    label_ru: str
+    label_kz: str
+    icon: str
+    color: str
+    categories: list[CategoryOut] = []
+
+
+class CategoryGroupsResponse(BaseModel):
+    groups: list[CategoryGroupOut]
+
+
 class DistrictOut(BaseModel):
     id: int
     slug: str
