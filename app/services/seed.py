@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.database import async_session
 from app.models import (
@@ -53,10 +54,17 @@ async def _seed_catalog(db: AsyncSession) -> None:
                 ))
         await db.flush()
 
-    # Categories & subcategories
-    existing_cat = (await db.execute(select(Category).limit(1))).scalar_one_or_none()
-    if existing_cat is None:
-        for order, cat in enumerate(CATEGORIES):
+    # Categories & subcategories — идемпотентный upsert по slug:
+    # добавляет недостающее, обновляет labels/icon/color/sort, ничего не удаляет
+    # (безопасно для прод-ссылок мастеров и заказов).
+    res = await db.execute(
+        select(Category).options(selectinload(Category.subcategories))
+    )
+    existing_cats = {c.slug: c for c in res.scalars().all()}
+
+    for order, cat in enumerate(CATEGORIES):
+        category = existing_cats.get(cat["slug"])
+        if category is None:
             category = Category(
                 slug=cat["slug"],
                 label_ru=cat["label_ru"],
@@ -67,8 +75,18 @@ async def _seed_catalog(db: AsyncSession) -> None:
             )
             db.add(category)
             await db.flush()
+            existing_subs: dict[str, Subcategory] = {}
+        else:
+            category.label_ru = cat["label_ru"]
+            category.label_kz = cat["label_kz"]
+            category.icon = cat["icon"]
+            category.color = cat["color"]
+            category.sort_order = order
+            existing_subs = {s.slug: s for s in category.subcategories}
 
-            for sub_order, (sslug, sru, skz, keywords) in enumerate(cat["subcategories"]):
+        for sub_order, (sslug, sru, skz, keywords) in enumerate(cat["subcategories"]):
+            sub = existing_subs.get(sslug)
+            if sub is None:
                 db.add(Subcategory(
                     category_id=category.id,
                     slug=sslug,
@@ -78,7 +96,12 @@ async def _seed_catalog(db: AsyncSession) -> None:
                     sort_order=sub_order,
                     is_other=sslug == "other",
                 ))
-        await db.flush()
+            else:
+                sub.label_ru = sru
+                sub.label_kz = skz
+                sub.keywords = keywords
+                sub.sort_order = sub_order
+    await db.flush()
 
 
 DEMO_MASTERS = [
