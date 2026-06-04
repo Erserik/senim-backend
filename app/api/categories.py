@@ -6,6 +6,8 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.models.category import Category, City, Subcategory
 from app.schemas.category import (
+    CategoryGroupOut,
+    CategoryGroupsResponse,
     CategoryListResponse,
     CategoryOut,
     CityListResponse,
@@ -14,6 +16,7 @@ from app.schemas.category import (
     SearchResponse,
     SubcategoryOut,
 )
+from app.services.catalog_data import GROUPS
 
 router = APIRouter(tags=["catalog"])
 
@@ -27,6 +30,25 @@ async def list_categories(db: AsyncSession = Depends(get_db)):
     )
     cats = result.scalars().all()
     return CategoryListResponse(categories=[CategoryOut.model_validate(c) for c in cats])
+
+
+@router.get("/category-groups", response_model=CategoryGroupsResponse)
+async def list_category_groups(db: AsyncSession = Depends(get_db)):
+    """Группы верхнего уровня (статичная таксономия) с категориями из БД."""
+    result = await db.execute(
+        select(Category)
+        .options(selectinload(Category.subcategories))
+        .order_by(Category.sort_order)
+    )
+    by_slug = {c.slug: c for c in result.scalars().all()}
+    groups = []
+    for g in GROUPS:
+        cats = [CategoryOut.model_validate(by_slug[s]) for s in g["categories"] if s in by_slug]
+        groups.append(CategoryGroupOut(
+            slug=g["slug"], label_ru=g["label_ru"], label_kz=g["label_kz"],
+            icon=g["icon"], color=g["color"], categories=cats,
+        ))
+    return CategoryGroupsResponse(groups=groups)
 
 
 @router.get("/categories/{slug}", response_model=CategoryOut)
