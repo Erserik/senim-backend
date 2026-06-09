@@ -24,7 +24,7 @@ async def _all_cats():
 async def test_seed_on_empty_db_creates_all():
     await _run_seed()
     cats = await _all_cats()
-    assert len(cats) == len(CATEGORIES) == 14
+    assert len(cats) == len(CATEGORIES)
     assert "cleaning" in cats and "movers" in cats
     assert len(cats["cleaning"].subcategories) == 6
 
@@ -38,7 +38,7 @@ async def test_seed_adds_missing_categories_to_old_db():
 
     await _run_seed()
     cats = await _all_cats()
-    assert len(cats) == 14
+    assert len(cats) == len(CATEGORIES)
     # существующая категория обновлена, не задублирована
     assert cats["plumber"].label_ru == "Сантехник"
     assert cats["plumber"].color == "#1E88E5"
@@ -50,7 +50,7 @@ async def test_seed_is_idempotent():
     await _run_seed()
     await _run_seed()
     cats = await _all_cats()
-    assert len(cats) == 14
+    assert len(cats) == len(CATEGORIES)
     async with async_session() as db:
         n_subs = len((await db.execute(select(Subcategory))).scalars().all())
     await _run_seed()

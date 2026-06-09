@@ -14,7 +14,7 @@ async def test_groups_endpoint_shape(client):
     res = await client.get("/api/category-groups")
     assert res.status_code == 200
     groups = res.json()["groups"]
-    assert len(groups) == 6
+    assert len(groups) == len(GROUPS)
     by_slug = {g["slug"]: g for g in groups}
     g = by_slug["g-cleaning"]
     assert g["label_ru"] == "Уборка"
