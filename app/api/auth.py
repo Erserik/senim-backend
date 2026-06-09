@@ -92,8 +92,10 @@ async def setup_profile(
     db: AsyncSession = Depends(get_db),
 ):
     user.first_name = req.first_name
-    user.last_name = req.last_name
-    user.city_slug = req.city_slug
+    if req.last_name is not None:
+        user.last_name = req.last_name
+    if req.city_slug is not None:
+        user.city_slug = req.city_slug
     if req.photo_url:
         user.photo_url = req.photo_url
     await db.flush()

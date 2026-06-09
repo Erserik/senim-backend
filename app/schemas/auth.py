@@ -8,8 +8,10 @@ class ChangePhoneRequest(BaseModel):
 
 class ProfileSetupRequest(BaseModel):
     first_name: str = Field(..., min_length=1, max_length=100)
-    last_name: str = Field(..., min_length=1, max_length=100)
-    city_slug: str = Field(..., min_length=1, max_length=50)
+    # last_name / city_slug are optional: a client registers with name only,
+    # a master fills the full profile. Only provided fields are updated.
+    last_name: str | None = Field(None, max_length=100)
+    city_slug: str | None = Field(None, max_length=50)
     photo_url: str | None = None
 
 
